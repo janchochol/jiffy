@@ -37,9 +37,12 @@ typedef struct {
     ERL_NIF_TERM    atom_escape_forward_slashes;
     ERL_NIF_TERM    atom_dedupe_keys;
     ERL_NIF_TERM    atom_copy_strings;
+    ERL_NIF_TERM    atom_stream;
 
     ERL_NIF_TERM    ref_object;
     ERL_NIF_TERM    ref_array;
+    ERL_NIF_TERM    ref_array_stream;
+    ERL_NIF_TERM    ref_object_stream;
 
     ErlNifResourceType* res_dec;
     ErlNifResourceType* res_enc;
@@ -58,6 +61,8 @@ int should_yield(ErlNifEnv* env, size_t* used, size_t bytes_per_red);
 ERL_NIF_TERM decode_init(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 ERL_NIF_TERM decode_iter(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 ERL_NIF_TERM encode_init(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+ERL_NIF_TERM encode_stream_continue(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+ERL_NIF_TERM encode_stream_end(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 ERL_NIF_TERM encode_iter(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 
 void dec_destroy(ErlNifEnv* env, void* obj);

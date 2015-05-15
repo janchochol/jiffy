@@ -2,7 +2,7 @@
 % See the LICENSE file for more information.
 
 -module(jiffy).
--export([decode/1, decode/2, encode/1, encode/2]).
+-export([decode/1, decode/2, encode/1, encode/2, encode_stream_continue/2, encode_stream_end/1]).
 -define(NOT_LOADED, not_loaded(?LINE)).
 
 -compile([no_native]).
@@ -87,22 +87,22 @@ encode(Data) ->
 -spec encode(json_value(), encode_options()) -> iodata().
 encode(Data, Options) ->
     ForceUTF8 = lists:member(force_utf8, Options),
-    case nif_encode_init(Data, Options) of
-        {error, {invalid_string, _}} when ForceUTF8 == true ->
-            FixedData = jiffy_utf8:fix(Data),
-            encode(FixedData, Options -- [force_utf8]);
-        {error, {invalid_object_member_key, _}} when ForceUTF8 == true ->
-            FixedData = jiffy_utf8:fix(Data),
-            encode(FixedData, Options -- [force_utf8]);
-        {error, _} = Error ->
-            throw(Error);
-        {partial, IOData} ->
-            finish_encode(IOData, []);
-        {iter, Encoder, Stack, IOBuf} ->
-            encode_loop(Data, Options, Encoder, Stack, IOBuf);
-        IOData ->
-            IOData
-    end.
+    Stream = lists:keyfind(stream, 1, Options),
+    case {Stream, ForceUTF8} of
+        {{stream, _}, true} ->
+            throw({badarg, "stream and force_utf8 do not work together"});
+        _ ->
+            ok
+    end,
+    encode_response(nif_encode_init(Data, Options), Data, Options, ForceUTF8).
+
+
+encode_stream_continue(Data, {Encoder, Stack, ForceUTF8}) ->
+    encode_response(nif_encode_stream_continue(Encoder, Stack, Data), Data, {stream_cont, Encoder, Stack}, ForceUTF8).
+
+
+encode_stream_end({Encoder, Stack, ForceUTF8}) ->
+    encode_response(nif_encode_stream_end(Encoder, Stack), <<>>, {stream_end, Encoder, Stack}, ForceUTF8).
 
 
 finish_decode({bignum, Value}) ->
@@ -190,25 +190,39 @@ decode_loop(Data, Decoder, Val, Objs, Curr) ->
     end.
 
 
+encode_response({error, {invalid_string, _}}, Data, Options, true) ->
+    case Options of
+        {stream_end, _Encoder, _Stack} ->
+            % There is no easy way to support force_utf8 + stream for this case,
+            % do disable it
+            throw({error, internal_error});
+        {stream_cont, _Encoder, _Stack} ->
+            throw({error, internal_error});
+        Options when is_list(Options) ->
+            FixedData = jiffy_utf8:fix(Data),
+            encode(FixedData, Options -- [force_utf8])
+    end;
+encode_response({error, {invalid_object_member_key, _}}, Data, Options, true) ->
+    FixedData = jiffy_utf8:fix(Data),
+    encode(FixedData, Options -- [force_utf8]);
+encode_response({error, _} = Error, _Data, _Options, _ForceUTF8) ->
+    throw(Error);
+encode_response({iter, Encoder, Stack, IOBuf}, Data, Options, _ForceUTF8) ->
+    encode_loop(Data, Options, Encoder, Stack, IOBuf);
+encode_response({stream, IOData, Encoder, Stack}, _Data, _Options, ForceUTF8) ->
+    {maybe_finish_encode(IOData), {Encoder, Stack, ForceUTF8}};
+encode_response(IOData, _Data, _Options, _ForceUTF8) ->
+    maybe_finish_encode(IOData).
+
+
+maybe_finish_encode({partial, IOData}) ->
+    finish_encode(IOData, []);
+maybe_finish_encode(IOData) ->
+    IOData.
+
 encode_loop(Data, Options, Encoder, Stack, IOBuf) ->
     ForceUTF8 = lists:member(force_utf8, Options),
-    case nif_encode_iter(Encoder, Stack, IOBuf) of
-        {error, {invalid_string, _}} when ForceUTF8 == true ->
-            FixedData = jiffy_utf8:fix(Data),
-            encode(FixedData, Options -- [force_utf8]);
-        {error, {invalid_object_member_key, _}} when ForceUTF8 == true ->
-            FixedData = jiffy_utf8:fix(Data),
-            encode(FixedData, Options -- [force_utf8]);
-        {error, _} = Error ->
-            throw(Error);
-        {partial, IOData} ->
-            finish_encode(IOData, []);
-        {iter, NewEncoder, NewStack, NewIOBuf} ->
-            encode_loop(Data, Options, NewEncoder, NewStack, NewIOBuf);
-        IOData ->
-            IOData
-    end.
-
+    encode_response(nif_encode_iter(Encoder, Stack, IOBuf), Data, Options, ForceUTF8).
 
 not_loaded(Line) ->
     erlang:nif_error({not_loaded, [{module, ?MODULE}, {line, Line}]}).
@@ -220,6 +234,12 @@ nif_decode_iter(_Data, _Decoder, _, _, _) ->
     ?NOT_LOADED.
 
 nif_encode_init(_Data, _Options) ->
+    ?NOT_LOADED.
+
+nif_encode_stream_continue(_Encoder, _Stack, _Data) ->
+    ?NOT_LOADED.
+
+nif_encode_stream_end(_Encoder, _Stack) ->
     ?NOT_LOADED.
 
 nif_encode_iter(_Encoder, _Stack, _IoList) ->

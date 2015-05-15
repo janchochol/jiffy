@@ -34,10 +34,13 @@ load(ErlNifEnv* env, void** priv, ERL_NIF_TERM info)
     st->atom_escape_forward_slashes = make_atom(env, "escape_forward_slashes");
     st->atom_dedupe_keys = make_atom(env, "dedupe_keys");
     st->atom_copy_strings = make_atom(env, "copy_strings");
+    st->atom_stream = make_atom(env, "stream");
 
     // Markers used in encoding
     st->ref_object = make_atom(env, "$object_ref$");
     st->ref_array = make_atom(env, "$array_ref$");
+    st->ref_array_stream = make_atom(env, "$stream_array_ref$");
+    st->ref_object_stream = make_atom(env, "$stream_object_ref$");
 
     st->res_dec = enif_open_resource_type(
             env,
@@ -86,6 +89,8 @@ static ErlNifFunc funcs[] =
     {"nif_decode_init", 2, decode_init},
     {"nif_decode_iter", 5, decode_iter},
     {"nif_encode_init", 2, encode_init},
+    {"nif_encode_stream_continue", 3, encode_stream_continue},
+    {"nif_encode_stream_end", 2, encode_stream_end},
     {"nif_encode_iter", 3, encode_iter}
 };
 
